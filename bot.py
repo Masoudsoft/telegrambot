@@ -7,6 +7,9 @@ API_TOKEN = '8099196414:AAFUYCNnj9vq-h4MScsLPSuIcHNUzySWmQ0'
 
 bot = telebot.TeleBot(API_TOKEN)
 app = Flask(__name__)
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    bot.reply_to(message, "👋 سلام! به *دفترچه خاطرات دیجیتال* خوش اومدی!\n\n📝 می‌تونی هر چیزی که دوست داری بنویسی و من برات ذخیره‌ش می‌کنم.\n\nبرای دیدن خاطراتت، دستور `/all` رو بفرست.", parse_mode='Markdown')
 
 # 📁 اتصال به دیتابیس SQLite
 conn = sqlite3.connect('messages.db', check_same_thread=False)
