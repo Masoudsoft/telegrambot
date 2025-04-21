@@ -1,17 +1,18 @@
-import os
-import sqlite3
-from flask import Flask, request
 import telebot
 from telebot import types
+from flask import Flask, request
+import sqlite3
+import os
 
-API_TOKEN = "8099196414:AAFUYCNnj9vq-h4MScsLPSuIcHNUzySWmQ0"
-
+API_TOKEN = '8099196414:AAFUYCNnj9vq-h4MScsLPSuIcHNUzySWmQ0'
 bot = telebot.TeleBot(API_TOKEN)
 app = Flask(__name__)
 
-# 📦 اتصال به دیتابیس
+# اتصال به دیتابیس
 conn = sqlite3.connect('messages.db', check_same_thread=False)
 cursor = conn.cursor()
+
+# ساخت جدول اگر وجود نداشته باشد
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,79 +25,71 @@ cursor.execute('''
 ''')
 conn.commit()
 
-# 🎉 پیام خوش‌آمدگویی با دکمه‌ها
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
+# کیبورد اصلی
+def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row('📝 ارسال متن', '🖼️ ارسال عکس')
-    markup.row('📖 مشاهده خاطرات', '🔍 جستجو')
-    bot.send_message(message.chat.id, "سلام! 👋\nبه ربات دفترچه یادداشت و خاطره خوش اومدی!\n\nمی‌تونی متن‌ و عکس‌هات رو ذخیره کنی و بعداً ببینی یا جستجو کنی.", reply_markup=markup)
+    markup.add("📝 ارسال متن", "📷 ارسال عکس")
+    markup.add("📚 مشاهده خاطرات", "🔍 جستجو در خاطرات")
+    return markup
 
-# 📝 ذخیره متن
-@bot.message_handler(func=lambda message: message.text == "📝 ارسال متن")
-def ask_for_text(message):
+# خوش‌آمدگویی
+@bot.message_handler(commands=['start'])
+def start(message):
+    text = (
+        "سلام 👋\n"
+        "به ربات دفترچه خاطرات خوش اومدی!\n\n"
+        "با این ربات می‌تونی متن‌ها و عکس‌های روزانه‌تو ذخیره کنی.\n"
+        "از منوی زیر یکی از گزینه‌ها رو انتخاب کن.👇"
+    )
+    bot.send_message(message.chat.id, text, reply_markup=main_menu())
+
+# ارسال متن
+@bot.message_handler(func=lambda msg: msg.text == "📝 ارسال متن")
+def ask_text(message):
     bot.send_message(message.chat.id, "متنت رو بفرست:")
 
+# ذخیره متن
 @bot.message_handler(content_types=['text'])
-def handle_text(message):
-    if message.text in ["📝 ارسال متن", "🖼️ ارسال عکس", "📖 مشاهده خاطرات", "🔍 جستجو", "/start"]:
-        return  # جلوگیری از ذخیره دکمه‌ها یا دستورات
+def save_text(message):
+    if message.text in ["📝 ارسال متن", "📷 ارسال عکس", "📚 مشاهده خاطرات", "🔍 جستجو در خاطرات"]:
+        return  # جلو ذخیره شدن دکمه‌ها گرفته بشه
+
     cursor.execute('INSERT INTO messages (user_id, username, text) VALUES (?, ?, ?)',
                    (message.from_user.id, message.from_user.username, message.text))
     conn.commit()
-    bot.send_message(message.chat.id, "یادداشتت ذخیره شد 📝")
+    bot.send_message(message.chat.id, "✅ متنت ذخیره شد.", reply_markup=main_menu())
 
-# 🖼️ ذخیره عکس
+# ارسال عکس
+@bot.message_handler(func=lambda msg: msg.text == "📷 ارسال عکس")
+def ask_photo(message):
+    bot.send_message(message.chat.id, "عکست رو بفرست:")
+
+# ذخیره عکس
 @bot.message_handler(content_types=['photo'])
-def handle_photo(message):
-    photo_id = message.photo[-1].file_id
+def save_photo(message):
+    photo = message.photo[-1].file_id
     cursor.execute('INSERT INTO messages (user_id, username, photo_file_id) VALUES (?, ?, ?)',
-                   (message.from_user.id, message.from_user.username, photo_id))
+                   (message.from_user.id, message.from_user.username, photo))
     conn.commit()
-    bot.send_message(message.chat.id, "عکست ذخیره شد 🖼️")
+    bot.send_message(message.chat.id, "✅ عکس ذخیره شد.", reply_markup=main_menu())
 
-# 📖 مشاهده خاطرات
-@bot.message_handler(func=lambda message: message.text == "📖 مشاهده خاطرات")
+# مشاهده آخرین خاطرات
+@bot.message_handler(func=lambda msg: msg.text == "📚 مشاهده خاطرات")
 def show_memories(message):
-    cursor.execute('SELECT text, date FROM messages WHERE user_id = ? AND text IS NOT NULL ORDER BY date DESC LIMIT 5', (message.from_user.id,))
+    cursor.execute('''
+        SELECT text, date FROM messages 
+        WHERE user_id = ? AND text IS NOT NULL 
+        ORDER BY date DESC LIMIT 5
+    ''', (message.from_user.id,))
     rows = cursor.fetchall()
+
     if rows:
-        response = "📝 آخرین خاطراتت:\n\n"
         for row in rows:
-            response += f"📅 {row[1]}\n{row[0]}\n\n"
+            bot.send_message(message.chat.id, f"📝 {row[0]}\n📅 {row[1]}")
     else:
-        response = "خاطره‌ای پیدا نشد."
-    bot.send_message(message.chat.id, response)
+        bot.send_message(message.chat.id, "هیچ خاطره‌ای نداری هنوز 😔")
 
-# 🔍 جستجو
-@bot.message_handler(func=lambda message: message.text == "🔍 جستجو")
-def ask_for_keyword(message):
-    bot.send_message(message.chat.id, "کلمه‌ای که می‌خوای جستجو کنی رو بنویس:")
-
-@bot.message_handler(func=lambda message: True)
-def search_notes(message):
-    keyword = message.text.strip()
-    if not keyword or keyword in ["📝 ارسال متن", "🖼️ ارسال عکس", "📖 مشاهده خاطرات", "🔍 جستجو", "/start"]:
-        return
-    cursor.execute('SELECT text, date FROM messages WHERE user_id = ? AND text LIKE ?', (message.from_user.id, f"%{keyword}%"))
-    rows = cursor.fetchall()
-    if rows:
-        response = "🔎 نتایج جستجو:\n\n"
-        for row in rows:
-            response += f"📅 {row[1]}\n{row[0]}\n\n"
-    else:
-        response = "موردی پیدا نشد."
-    bot.send_message(message.chat.id, response)
-
-# 🌐 Webhook برای Render
-@app.route('/', methods=['POST'])
-def webhook():
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return '', 200
-    return '', 403
-
-if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=int(os.environ.get('PORT', 5000)))
+# جستجو در خاطرات
+@bot.message_handler(func=lambda msg: msg.text == "🔍 جستجو در خاطرات")
+def ask_query(message):
+    bot.send_message(message.chat.id, "عبارتی که می‌خوای_
