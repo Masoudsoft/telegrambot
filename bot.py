@@ -43,6 +43,20 @@ def save_message(message):
 # 📤 دستور برای دیدن ۵ پیام آخر
 @bot.message_handler(commands=['show'])
 def show_messages(message):
+# 📤 دستور برای دیدن همه پیام‌ها
+@bot.message_handler(commands=['all'])
+def show_all_messages(message):
+    user_id = message.from_user.id
+    cursor.execute('SELECT text, date FROM messages WHERE user_id = ? ORDER BY date DESC', (user_id,))
+    rows = cursor.fetchall()
+
+    if rows:
+        reply = "\n\n".join([f"📝 {row[0]}\n🕒 {row[1]}" for row in rows])
+    else:
+        reply = "هیچ پیامی یافت نشد."
+
+    bot.reply_to(message, reply)
+
     user_id = message.from_user.id
     cursor.execute('SELECT text, date FROM messages WHERE user_id = ? ORDER BY date DESC LIMIT 5', (user_id,))
     rows = cursor.fetchall()
