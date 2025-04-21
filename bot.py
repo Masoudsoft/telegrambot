@@ -3,13 +3,18 @@ import telebot
 import os
 import sqlite3
 
-API_TOKEN = '8099196414:AAFUYCNnj9vq-h4MScsLPSuIcHNUzySWmQ0'  
+API_TOKEN = '8099196414:AAFUYCNnj9vq-h4MScsLPSuIcHNUzySWmQ0'
 
 bot = telebot.TeleBot(API_TOKEN)
 app = Flask(__name__)
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "👋 سلام! به *دفترچه خاطرات دیجیتال* خوش اومدی!\n\n📝 می‌تونی هر چیزی که دوست داری بنویسی و من برات ذخیره‌ش می‌کنم.\n\nبرای دیدن خاطراتت، دستور `/all` رو بفرست.", parse_mode='Markdown')
+    bot.reply_to(
+        message,
+        "👋 سلام! به *دفترچه خاطرات دیجیتال* خوش اومدی!\n\n📝 می‌تونی هر چیزی که دوست داری بنویسی و من برات ذخیره‌ش می‌کنم.\n\nبرای دیدن خاطراتت، دستور `/all` رو بفرست.",
+        parse_mode='Markdown'
+    )
 
 # 📁 اتصال به دیتابیس SQLite
 conn = sqlite3.connect('messages.db', check_same_thread=False)
@@ -34,31 +39,22 @@ def save_message(message):
     username = message.from_user.username
     text = message.text
 
-    cursor.execute('INSERT INTO messages (user_id, username, text) VALUES (?, ?, ?)',
-                   (user_id, username, text))
+    cursor.execute(
+        'INSERT INTO messages (user_id, username, text) VALUES (?, ?, ?)',
+        (user_id, username, text)
+    )
     conn.commit()
 
     bot.reply_to(message, "✅ پیام شما ذخیره شد.")
 
-# 📤 دستور برای دیدن ۵ پیام آخر
-@bot.message_handler(commands=['show'])
-def show_messages(message):
 # 📤 دستور برای دیدن همه پیام‌ها
 @bot.message_handler(commands=['all'])
 def show_all_messages(message):
     user_id = message.from_user.id
-    cursor.execute('SELECT text, date FROM messages WHERE user_id = ? ORDER BY date DESC', (user_id,))
-    rows = cursor.fetchall()
-
-    if rows:
-        reply = "\n\n".join([f"📝 {row[0]}\n🕒 {row[1]}" for row in rows])
-    else:
-        reply = "هیچ پیامی یافت نشد."
-
-    bot.reply_to(message, reply)
-
-    user_id = message.from_user.id
-    cursor.execute('SELECT text, date FROM messages WHERE user_id = ? ORDER BY date DESC LIMIT 5', (user_id,))
+    cursor.execute(
+        'SELECT text, date FROM messages WHERE user_id = ? ORDER BY date DESC',
+        (user_id,)
+    )
     rows = cursor.fetchall()
 
     if rows:
