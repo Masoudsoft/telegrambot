@@ -1,18 +1,18 @@
-from flask import Flask, request
-import telebot
 import os
 import sqlite3
+from flask import Flask, request
+import telebot
+from telebot import types
 
-API_TOKEN = '8099196414:AAFUYCNnj9vq-h4MScsLPSuIcHNUzySWmQ0'
-
-bot = telebot.TeleBot(API_TOKEN)
+TOKEN = "YOUR_BOT_TOKEN"
+bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-# اتصال به دیتابیس SQLite
-conn = sqlite3.connect('messages.db', check_same_thread=False)
+# اتصال به دیتابیس
+conn = sqlite3.connect("messages.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# ساخت جدول اگر وجود نداشت
+# ایجاد جدول در صورت نبودش
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,132 +25,98 @@ cursor.execute('''
 ''')
 conn.commit()
 
-# 🎉 خوش‌آمدگویی
+# منوی اصلی
+def main_menu():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row("📝 ارسال متن", "📷 ارسال عکس")
+    markup.row("📖 مشاهده خاطرات", "🔍 جستجو")
+    return markup
+
+# استارت و نمایش منو
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    welcome_text = (
-        "👋 سلام! به *دفترچه خاطرات دیجیتال* خوش اومدی!\n\n"
-        "📝 می‌تونی متن یا عکس ارسال کنی، من برات ذخیره می‌کنم.\n\n"
-        "*دستورات ربات:*\n"
-        "/start - شروع و خوش‌آمدگویی\n"
-        "/show - نمایش ۵ پیام آخر\n"
-        "/all - نمایش همه پیام‌ها\n"
-        "/search کلمه - جستجو در پیام‌ها\n"
-        "/feedback پیام - ارسال بازخورد\n"
+    bot.send_message(
+        message.chat.id,
+        "👋 خوش اومدی به دفترچه خاطرات دیجیتال!\n\n"
+        "از منوی زیر استفاده کن یا متنی بفرست تا ذخیره بشه 😊",
+        reply_markup=main_menu()
     )
-    bot.reply_to(message, welcome_text, parse_mode='Markdown')
 
-# 📤 نمایش ۵ پیام آخر
-@bot.message_handler(commands=['show'])
-def show_messages(message):
-    user_id = message.from_user.id
-    cursor.execute('SELECT text, date FROM messages WHERE user_id = ? AND text IS NOT NULL ORDER BY date DESC LIMIT 5', (user_id,))
+# دریافت متن کاربر
+@bot.message_handler(func=lambda m: m.text == "📝 ارسال متن")
+def ask_for_note(message):
+    bot.send_message(message.chat.id, "✍️ لطفاً متنت رو بفرست.")
+
+@bot.message_handler(func=lambda m: m.text == "📖 مشاهده خاطرات")
+def show_notes(message):
+    cursor.execute('''
+        SELECT text, date FROM messages
+        WHERE user_id = ? AND text IS NOT NULL
+        ORDER BY date DESC LIMIT 5
+    ''', (message.from_user.id,))
     rows = cursor.fetchall()
-
     if rows:
-        reply = "\n\n".join([f"📝 {row[0]}\n🕒 {row[1]}" for row in rows])
+        for row in rows:
+            bot.send_message(message.chat.id, f"📝 {row[0]}\n📅 {row[1]}")
     else:
-        reply = "هیچ پیامی یافت نشد."
-    bot.reply_to(message, reply)
+        bot.send_message(message.chat.id, "هنوز خاطره‌ای ثبت نکردی.")
 
-# 📤 نمایش همه پیام‌ها
-@bot.message_handler(commands=['all'])
-def show_all_messages(message):
-    user_id = message.from_user.id
-    cursor.execute('SELECT text, date FROM messages WHERE user_id = ? AND text IS NOT NULL ORDER BY date DESC', (user_id,))
-    rows = cursor.fetchall()
+@bot.message_handler(func=lambda m: m.text == "🔍 جستجو")
+def ask_search_query(message):
+    bot.send_message(message.chat.id, "🔍 لطفاً واژه‌ای برای جستجو بفرست.")
 
-    if rows:
-        reply = "\n\n".join([f"📝 {row[0]}\n🕒 {row[1]}" for row in rows])
-    else:
-        reply = "هیچ پیامی یافت نشد."
-    bot.reply_to(message, reply)
-
-# 🔍 جستجو
-@bot.message_handler(commands=['search'])
-def search_messages(message):
-    user_id = message.from_user.id
-    search_query = message.text.split(' ', 1)[1] if len(message.text.split(' ', 1)) > 1 else ""
-
-    if search_query:
-        cursor.execute('SELECT text, date FROM messages WHERE user_id = ? AND text LIKE ? ORDER BY date DESC',
-                       (user_id, f'%{search_query}%'))
-        rows = cursor.fetchall()
-
-        if rows:
-            reply = "\n\n".join([f"📝 {row[0]}\n🕒 {row[1]}" for row in rows])
+# ذخیره متن اگر دستور خاص نبود
+@bot.message_handler(func=lambda message: message.text not in [
+    "📝 ارسال متن", "📖 مشاهده خاطرات", "📷 ارسال عکس", "🔍 جستجو"
+])
+def save_text(message):
+    if message.reply_to_message and "🔍 لطفاً واژه‌ای برای جستجو" in message.reply_to_message.text:
+        query = message.text
+        cursor.execute('''
+            SELECT text, date FROM messages
+            WHERE user_id = ? AND text LIKE ?
+            ORDER BY date DESC
+        ''', (message.from_user.id, f"%{query}%"))
+        results = cursor.fetchall()
+        if results:
+            for row in results:
+                bot.send_message(message.chat.id, f"📝 {row[0]}\n📅 {row[1]}")
         else:
-            reply = "هیچ پیامی با این جستجو یافت نشد."
+            bot.send_message(message.chat.id, "چیزی پیدا نشد.")
     else:
-        reply = "لطفا کلمه‌ای برای جستجو وارد کنید."
-
-    bot.reply_to(message, reply)
-
-# 📬 بازخورد
-@bot.message_handler(commands=['feedback'])
-def feedback(message):
-    user_id = message.from_user.id
-    feedback_text = message.text.split(' ', 1)[1] if len(message.text.split(' ', 1)) > 1 else ""
-
-    if feedback_text:
-        cursor.execute('INSERT INTO messages (user_id, username, text) VALUES (?, ?, ?)',
-                       (user_id, message.from_user.username, f"بازخورد: {feedback_text}"))
+        cursor.execute('''
+            INSERT INTO messages (user_id, username, text)
+            VALUES (?, ?, ?)
+        ''', (message.from_user.id, message.from_user.username, message.text))
         conn.commit()
-        bot.reply_to(message, "✅ بازخورد شما ذخیره شد.")
-    else:
-        bot.reply_to(message, "لطفا متن بازخورد خود را وارد کنید.")
+        bot.send_message(message.chat.id, "✅ متن ذخیره شد.")
 
-# 📸 ذخیره عکس‌ها
+# دریافت عکس
 @bot.message_handler(content_types=['photo'])
-def handle_photo(message):
-    user_id = message.from_user.id
-    username = message.from_user.username
-    photo_file_id = message.photo[-1].file_id  # بزرگ‌ترین سایز
+def save_photo(message):
+    photo_id = message.photo[-1].file_id
+    cursor.execute('''
+        INSERT INTO messages (user_id, username, photo_file_id)
+        VALUES (?, ?, ?)
+    ''', (message.from_user.id, message.from_user.username, photo_id))
+    conn.commit()
+    bot.send_message(message.chat.id, "✅ عکس ذخیره شد.")
 
-    try:
-        cursor.execute('INSERT INTO messages (user_id, username, photo_file_id) VALUES (?, ?, ?)',
-                       (user_id, username, photo_file_id))
-        conn.commit()
-        bot.reply_to(message, "📸 عکس شما ذخیره شد.")
-    except Exception as e:
-        print(f"Error saving photo: {e}")
-        bot.reply_to(message, "❌ مشکلی در ذخیره عکس به وجود آمده.")
-
-# ✅ ذخیره پیام‌های متنی عادی (در انتهای فایل قرار داده شده!)
-@bot.message_handler(func=lambda message: True, content_types=['text'])
-def save_message(message):
-    if message.text.startswith("/"):  # جلوگیری از ذخیره دستورات
-        return
-
-    user_id = message.from_user.id
-    username = message.from_user.username
-    text = message.text
-
-    try:
-        cursor.execute('INSERT INTO messages (user_id, username, text) VALUES (?, ?, ?)',
-                       (user_id, username, text))
-        conn.commit()
-        bot.reply_to(message, "✅ پیام شما ذخیره شد.")
-    except Exception as e:
-        print(f"Error saving message: {e}")
-        bot.reply_to(message, "❌ مشکلی در ذخیره پیام به وجود آمده.")
-
-# 🔗 Webhook برای دریافت پیام‌ها از تلگرام
-@app.route(f'/{API_TOKEN}', methods=['POST'])
+# Flask Webhook
+@app.route(f"/{TOKEN}", methods=['POST'])
 def webhook():
-    json_str = request.get_data().decode('UTF-8')
-    update = telebot.types.Update.de_json(json_str)
+    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
     bot.process_new_updates([update])
-    return '', 200
+    return "OK", 200
 
-# 🌐 صفحه اصلی تست
 @app.route('/')
 def index():
-    return 'ربات فعال است.'
+    return "ربات در حال اجراست 🚀"
 
-# 🚀 اجرای برنامه
+# راه‌اندازی Webhook
+import requests
+WEBHOOK_URL = "https://telegrambot-9hq7.onrender.com/" + TOKEN
+requests.get(f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={WEBHOOK_URL}")
+
 if __name__ == '__main__':
-    bot.remove_webhook()
-    bot.set_webhook(url='https://telegrambot-9hq7.onrender.com/' + API_TOKEN)
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
