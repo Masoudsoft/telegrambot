@@ -53,11 +53,13 @@ def save_message(message):
     username = message.from_user.username
     text = message.text
 
-    cursor.execute('INSERT INTO messages (user_id, username, text) VALUES (?, ?, ?)',
-                   (user_id, username, text))
-    conn.commit()
-
-    bot.reply_to(message, "✅ پیام شما ذخیره شد.")
+    try:
+        cursor.execute('INSERT INTO messages (user_id, username, text) VALUES (?, ?, ?)', (user_id, username, text))
+        conn.commit()
+        bot.reply_to(message, "✅ پیام شما ذخیره شد.")
+    except Exception as e:
+        print(f"Error saving message: {e}")
+        bot.reply_to(message, "❌ مشکلی در ذخیره پیام به وجود آمده.")
 
 # 📤 دستور برای دیدن ۵ پیام آخر
 @bot.message_handler(commands=['show'])
@@ -136,5 +138,12 @@ def index():
 
 # 🚀 اجرای Flask
 if __name__ == '__main__':
+    # این خط رو برای تست Polling اضافه کنین، اگر Webhook کار نکرد
+    # bot.polling(none_stop=True)
+
+    # تنظیم Webhook در صورت استفاده از آن
+    bot.remove_webhook()
+    bot.set_webhook(url='https://your-app-url.com/' + API_TOKEN)  # URL خودتون رو جایگزین کنین
+
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
